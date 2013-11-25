@@ -12,8 +12,7 @@ namespace SuperSocket.ProxyServer
     {
         public IReceiveFilter<BinaryRequestInfo> CreateFilter(IAppServer appServer, IAppSession appSession, IPEndPoint remoteEndPoint)
         {
-            return new Socks5ProxyReceiveFilter((ProxySession)appSession,"test","test");
-            //return new SocksSwitchReceiveFilter((ProxySession)appSession);
+            return new SocksSwitchReceiveFilter((ProxySession)appSession);
         }
     }
 }
