@@ -26,7 +26,7 @@ namespace SuperSocket.ProxyServer
             if (version == 0x04)
                 session.SetNextReceiveFilter(new Socks4ProxyReceiveFilter(session));
             else if (version == 0x05)
-                session.SetNextReceiveFilter(new Socks5ProxyReceiveFilter());
+                session.SetNextReceiveFilter(new Socks5ProxyReceiveFilter(session));
             else
             {
                 session.Logger.Error(session, string.Format("Invalid version: {0}", version));

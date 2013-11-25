@@ -28,6 +28,8 @@ namespace SuperSocket.ProxyServer
         public ProxyType Type { get; internal set; }
 
         public string UserID { get; internal set; }
+        //new add
+        public byte[] ProxyBuffer = new byte[1024 * 1024];
 
         internal protected new void SetNextReceiveFilter(IReceiveFilter<BinaryRequestInfo> receiveFilter)
         {
