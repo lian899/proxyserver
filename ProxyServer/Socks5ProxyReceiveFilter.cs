@@ -25,7 +25,7 @@ namespace SuperSocket.ProxyServer
     class Socks5ProxyReceiveFilter : ReceiveFilterBase<BinaryRequestInfo>
     {
 
-        protected static readonly BinaryRequestInfo NullRequestInfo;
+        //protected static readonly BinaryRequestInfo NullRequestInfo;
 
         private ProxySession m_Session;
         private SocksState m_State = SocksState.NotAuthenticated;
@@ -77,27 +77,21 @@ namespace SuperSocket.ProxyServer
         {
             if (m_State == SocksState.NotAuthenticated)
             {
-                ArraySegmentList buffer = new ArraySegmentList();
-                buffer.AddSegment(readBuffer, offset, length, toBeCopied);
-                if (!DoShakeHands(buffer.ToArrayData()))
+                if (!DoShakeHands(readBuffer, offset, length))
                     m_Session.Close();
                 rest = 0;
                 return null;
             }
             if (m_State == SocksState.Authenticating)
             {
-                ArraySegmentList buffer = new ArraySegmentList();
-                buffer.AddSegment(readBuffer, offset, length, toBeCopied);
-                if (!ValidateIdentity(buffer.ToArrayData()))
+                if (!ValidateIdentity(readBuffer, offset, length))
                     m_Session.Close();
                 rest = 0;
                 return null;
             }
             if (m_State == SocksState.Authenticated)
             {
-                ArraySegmentList buffer = new ArraySegmentList();
-                buffer.AddSegment(readBuffer, offset, length, toBeCopied);
-                if (!DoProtocolRequest(buffer.ToArrayData()))
+                if (!DoProtocolRequest(readBuffer, offset, length))
                     m_Session.Close();
                 else
                     CreateProxyBridge();
@@ -106,9 +100,7 @@ namespace SuperSocket.ProxyServer
             }
             if (m_State == SocksState.Connected)
             {
-                ArraySegmentList buffer = new ArraySegmentList();
-                buffer.AddSegment(readBuffer, offset, length, toBeCopied);
-                Proxy.Client.Send(buffer.ToArrayData());
+                Proxy.Client.Send(readBuffer.CloneRange<byte>(offset,length));
                 rest = 0;
                 return null;
             }
@@ -122,21 +114,29 @@ namespace SuperSocket.ProxyServer
         /// <summary>
         /// Process ShakeHands
         /// </summary>
-        private bool DoShakeHands(byte[] buffer)
+        private bool DoShakeHands(byte[] readBuffer, int offset, int length)
         {
 
-            byte method = 0xFF; 
-            if (buffer.Length >= 2)
+            byte method = 0xFF;
+            if (length >= 2)
             {
                 //if need verify
                 if (this.RequireValidate)
                 {
                     //need verify,so whether the client supports the user name and password authentication
-                    foreach (byte b in buffer)
+                    //foreach (byte b in buffer)
+                    //{
+                    //    if (b == 0x02)
+                    //        method = 0x02;   //client supports the user name and password authentication
+                    //}
+
+                    for (int i = 0; i < length; i++)
                     {
-                        if (b == 0x02)
+                        if (readBuffer[offset + i] == 0x02)
                             method = 0x02;   //client supports the user name and password authentication
                     }
+
+
                     m_State = SocksState.Authenticating;
                 }
                 else
@@ -156,19 +156,18 @@ namespace SuperSocket.ProxyServer
         /// <summary>
         /// Process authentication
         /// </summary>
-        private bool ValidateIdentity(byte[] buffer)
+        private bool ValidateIdentity(byte[] readBuffer, int offset, int length)
         {
             byte ep = 0xFF;//0xFF -> 255
             string username = string.Empty, password = string.Empty;
 
-            //报文格式:0x01 | 用户名长度（1字节）| 用户名（长度根据用户名长度域指定） | 口令长度（1字节） | 口令（长度由口令长度域指定）
-            if (buffer.Length >= 2)
+            if (length >= 2)
             {
-                int offset = 1;
+                int mark = 1;
                 int stringLength = 0;
 
                 //if username is null
-                if (buffer[1] == 0x00)
+                if (readBuffer[offset + 1] == 0x00)
                 {
                     if (string.IsNullOrEmpty(this.UserName))
                     {
@@ -177,9 +176,9 @@ namespace SuperSocket.ProxyServer
                 }
                 else
                 {
-                    stringLength = buffer[offset];
-                    username = Encoding.ASCII.GetString(buffer, offset + 1, stringLength);
-                    offset = offset + stringLength + 1;
+                    stringLength = readBuffer[offset + mark];
+                    username = Encoding.ASCII.GetString(readBuffer, offset + mark + 1, stringLength);
+                    mark = mark + stringLength + 1;
                     if (!string.IsNullOrEmpty(this.UserName))
                     {
                         ep = (byte)(username.Equals(this.UserName) ? 0x00 : 0xFF);
@@ -189,7 +188,7 @@ namespace SuperSocket.ProxyServer
                 if (ep == 0x00)
                 {
                     ep = 0xFF;
-                    if (buffer[0] == 0x00)
+                    if (readBuffer[offset + mark] == 0x00)
                     {
                         if (!string.IsNullOrEmpty(this.Password))
                         {
@@ -198,8 +197,8 @@ namespace SuperSocket.ProxyServer
                     }
                     else
                     {
-                        stringLength = buffer[offset];
-                        password = Encoding.ASCII.GetString(buffer, offset + 1, stringLength);
+                        stringLength = readBuffer[offset + mark];
+                        password = Encoding.ASCII.GetString(readBuffer, offset + mark + 1, stringLength);
                         if (!string.IsNullOrEmpty(this.Password))
                         {
                             ep = (byte)(password.Equals(this.Password) ? 0x00 : 0xFF);
@@ -219,22 +218,22 @@ namespace SuperSocket.ProxyServer
         /// <summary>
         ///Process Request
         /// </summary>
-        private bool DoProtocolRequest(byte[] buffer)
+        private bool DoProtocolRequest(byte[] readBuffer, int offset, int length)
         {
             string address = null;
             byte rep = 0x07;            //Does not support the command
-            if (buffer.Length >= 4)
+            if (length >= 4)
             {
                 //The Address Type
-                switch (buffer[3])
+                switch (readBuffer[offset + 3])
                 {
                     case 0x01:
-                        address = buffer[4] + "." + buffer[5] + "." + buffer[6] + "." + buffer[7]; //Encoding.ASCII.GetString((buffer.CloneRange<byte>(4, 4)));
+                        address = readBuffer[offset + 4] + "." + readBuffer[offset + 5] + "." + readBuffer[offset + 6] + "." + readBuffer[offset + 7]; //Encoding.ASCII.GetString((buffer.CloneRange<byte>(4, 4)));
                         break;
                     case 0x03:
                         //Get Domain
-                        int hostLength = buffer[4];
-                        address = Encoding.ASCII.GetString(buffer.CloneRange<byte>(5, hostLength));
+                        int hostLength = readBuffer[offset + 4];
+                        address = Encoding.ASCII.GetString(readBuffer.CloneRange<byte>(offset + 5, hostLength));
                         break;
                     case 0x04:
                         throw new NotImplementedException();
@@ -246,7 +245,7 @@ namespace SuperSocket.ProxyServer
 
             if (address != null && rep == 0x07)
             {
-                byte[] portBuffer = buffer.CloneRange<byte>(buffer.Length - 2, 2);
+                byte[] portBuffer = readBuffer.CloneRange<byte>(offset + (length - 2), 2);
                 Array.Reverse(portBuffer);  //Reverse port value
                 //DnsEndPoint dnsEndPoint= new DnsEndPoint(ipAddress, BitConverter.ToUInt16(portBuffer, 0));
                 this.RemoteEndPoint = new IPEndPoint(IPAddress.Parse(GetServerIpAddressByDomain(address)), BitConverter.ToUInt16(portBuffer, 0));
@@ -336,7 +335,7 @@ namespace SuperSocket.ProxyServer
             }
 
         }
-        
+
         /// <summary>
         /// very ugly way (you can implementation by youself)
         /// </summary>
@@ -374,4 +373,5 @@ namespace SuperSocket.ProxyServer
             get { throw new NotImplementedException(); }
         }
     }
+
 }
